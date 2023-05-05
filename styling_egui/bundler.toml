@@ -5,4 +5,4 @@
 # name = "Human Readable Plugin Name"  # defaults to <package_name>
 
 [styling_egui]
-name = "Egui testing gain"
+name = "Styling egui"
