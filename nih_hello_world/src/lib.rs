@@ -82,7 +82,7 @@ impl Default for TestNihPluginParams {
 }
 
 impl Plugin for TestNihPlugin {
-    const NAME: &'static str = "Test Nih Plugin";
+    const NAME: &'static str = "Hello World";
     const VENDOR: &'static str = "Hector";
     const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
     const EMAIL: &'static str = "hectorbennett@outlook.com";

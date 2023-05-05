@@ -4,5 +4,5 @@
 # [package_name]
 # name = "Human Readable Plugin Name"  # defaults to <package_name>
 
-[nih_hello_world]
-name = "Hello World"
+[styling_egui]
+name = "Egui testing gain"

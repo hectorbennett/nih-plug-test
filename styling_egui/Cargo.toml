@@ -1,0 +1,32 @@
+[package]
+name = "styling_egui"
+version = "0.1.0"
+edition = "2021"
+authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
+license = "ISC"
+
+description = "A simple gain plugin with an egui GUI"
+
+[workspace]
+members = ["xtask"]
+
+[lib]
+# The `lib` artifact is needed for the standalone target
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = [
+    "assert_process_allocs",
+    "standalone",
+] }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+atomic_float = "0.1"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
