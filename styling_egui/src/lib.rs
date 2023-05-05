@@ -3,8 +3,203 @@ use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui, widgets, EguiState};
 use std::sync::Arc;
 
+mod dial2;
+mod toggle_switch;
+
 /// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
 const PEAK_METER_DECAY_MS: f64 = 150.0;
+
+// FIXME: Theme should be `Copy` since it isn't big enough to generate a call to `memcpy`,
+// do this when egui releases a minor version
+/// The colors for a theme variant.
+// #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+// pub struct Theme {
+//     text: egui::Color32,
+
+//     // noninteractive widgets
+//     noninteractive_widget_bg_fill: egui::Color32,
+//     // weak_bg_fill: noninteractive_widget_weak_bg_fill: egui::Color32,
+//     noninteractive_widget_bg_stroke: egui::Color32,
+//     noninteractive_widget_rounding: egui::Color32,
+//     noninteractive_widget_fg_stroke: egui::Color32,
+//     noninteractive_widget_expansion: egui::Color32,
+
+//     // inactive widgets
+//     inactive_widget_bg_fill: egui::Color32,
+//     // weak_bg_fill: inactive_widget_weak_bg_fill: egui::Color32,
+//     inactive_widget_bg_stroke: egui::Color32,
+//      inactive_widget_rounding: egui::Color32,
+//      inactive_widget_fg_stroke: egui::Color32,
+//      inactive_widget_expansion: egui::Color32,
+
+//     // hovered widgets
+//      hovered_widget_bg_fill: egui::Color32,
+//     // weak_bg_fill: hovered_widget_weak_bg_fill: egui::Color32,
+//      hovered_widget_bg_stroke: egui::Color32,
+//      hovered_widget_rounding: egui::Color32,
+//      hovered_widget_fg_stroke: egui::Color32,
+//      hovered_widget_expansion: egui::Color32,
+
+//     // active widgets
+//      active_widget_bg_fill: egui::Color32,
+//     // weak_bg_fill: active_widget_weak_bg_fill: egui::Color32,
+//      active_widget_bg_stroke: egui::Color32,
+//      active_widget_rounding: egui::Color32,
+//      active_widget_fg_stroke: egui::Color32,
+//      active_widget_expansion: egui::Color32,
+
+//     // open widgets
+//      open_widget_bg_fill: egui::Color32,
+//     // weak_bg_fill: open_widget_weak_bg_fill: egui::Color32,
+//      open_widget_bg_stroke: egui::Color32,
+//      open_widget_rounding: egui::Color32,
+//      open_widget_fg_stroke: egui::Color32,
+//      open_widget_expansion: egui::Color32,
+
+// pub rosewater: egui::Color32,
+// pub flamingo: egui::Color32,
+// pub pink: egui::Color32,
+// pub mauve: egui::Color32,
+// pub red: egui::Color32,
+// pub maroon: egui::Color32,
+// pub peach: egui::Color32,
+// pub yellow: egui::Color32,
+// pub green: egui::Color32,
+// pub teal: egui::Color32,
+// pub sky: egui::Color32,
+// pub sapphire: egui::Color32,
+// pub blue: egui::Color32,
+// pub lavender: egui::Color32,
+// pub text: egui::Color32,
+// pub subtext1: egui::Color32,
+// pub subtext0: egui::Color32,
+// pub overlay2: egui::Color32,
+// pub overlay1: egui::Color32,
+// pub overlay0: egui::Color32,
+// pub surface2: egui::Color32,
+// pub surface1: egui::Color32,
+// pub surface0: egui::Color32,
+// pub base: egui::Color32,
+// pub mantle: egui::Color32,
+// pub crust: egui::Color32,
+// }
+
+// pub const DEFAULT_THEME: Theme = Theme {
+//     text: egui::Color32::from_rgb(76, 79, 105),
+
+// rosewater: egui::Color32::from_rgb(220, 138, 120),
+// flamingo: egui::Color32::from_rgb(221, 120, 120),
+// pink: egui::Color32::from_rgb(234, 118, 203),
+// mauve: egui::Color32::from_rgb(136, 57, 239),
+// red: egui::Color32::from_rgb(210, 15, 57),
+// maroon: egui::Color32::from_rgb(230, 69, 83),
+// peach: egui::Color32::from_rgb(254, 100, 11),
+// yellow: egui::Color32::from_rgb(223, 142, 29),
+// green: egui::Color32::from_rgb(64, 160, 43),
+// teal: egui::Color32::from_rgb(23, 146, 153),
+// sky: egui::Color32::from_rgb(4, 165, 229),
+// sapphire: egui::Color32::from_rgb(32, 159, 181),
+// blue: egui::Color32::from_rgb(30, 102, 245),
+// lavender: egui::Color32::from_rgb(114, 135, 253),
+// subtext1: egui::Color32::from_rgb(92, 95, 119),
+// subtext0: egui::Color32::from_rgb(108, 111, 133),
+// overlay2: egui::Color32::from_rgb(124, 127, 147),
+// overlay1: egui::Color32::from_rgb(140, 143, 161),
+// overlay0: egui::Color32::from_rgb(156, 160, 176),
+// surface2: egui::Color32::from_rgb(172, 176, 190),
+// surface1: egui::Color32::from_rgb(188, 192, 204),
+// surface0: egui::Color32::from_rgb(204, 208, 218),
+// base: egui::Color32::from_rgb(239, 241, 245),
+// mantle: egui::Color32::from_rgb(230, 233, 239),
+// crust: egui::Color32::from_rgb(220, 224, 232),
+// };
+
+// pub fn make_widget_visuals(old_widget: egui::style::WidgetVisuals, theme: &Theme) -> egui::style::WidgetVisuals {
+//     old_widget
+// }
+
+/// Apply the given theme to a [`Context`](egui::Context).
+pub fn set_theme(ctx: &egui::Context) {
+    let old = ctx.style().visuals.clone();
+    ctx.set_visuals(egui::Visuals {
+        override_text_color: old.override_text_color,
+        widgets: egui::style::Widgets {
+            noninteractive: egui::style::WidgetVisuals {
+                bg_stroke: egui::Stroke {
+                    color: egui::Color32::from_rgb(0, 255, 0),
+                    width: 1.0,
+                },
+                ..old.widgets.noninteractive
+            },
+            inactive: egui::style::WidgetVisuals {
+                bg_stroke: egui::Stroke {
+                    color: egui::Color32::from_rgb(0, 255, 0),
+                    width: 1.0,
+                },
+                ..old.widgets.inactive
+            },
+            hovered: egui::style::WidgetVisuals {
+                bg_stroke: egui::Stroke {
+                    color: egui::Color32::from_rgb(0, 255, 0),
+                    width: 1.0,
+                },
+                ..old.widgets.hovered
+            },
+            active: egui::style::WidgetVisuals {
+                bg_stroke: egui::Stroke {
+                    color: egui::Color32::from_rgb(0, 255, 0),
+                    width: 1.0,
+                },
+                ..old.widgets.active
+            },
+            open: egui::style::WidgetVisuals {
+                bg_stroke: egui::Stroke {
+                    color: egui::Color32::from_rgb(0, 255, 0),
+                    width: 1.0,
+                },
+                ..old.widgets.open
+            },
+        },
+        selection: egui::style::Selection { ..old.selection },
+        // hyperlink_color: theme.hyperlink_color,
+        // faint_bg_color: theme.faint_bg_color,
+        // extreme_bg_color: theme.extreme_bg_color,
+        // code_bg_color: theme.code_bg_color,
+        // warn_fg_color: theme.warn_fg_color,
+        // error_fg_color: theme.error_fg_color,
+        // window_rounding
+        // window_shadow,
+        // window_fill: theme.base,
+        // window_stroke: egui::Stroke {
+        //     color: theme.overlay1,
+        //     ..old.window_stroke
+        // },
+        // menu_rounding
+        // panel_fill
+        // popup_shadow
+        // resize_corner_size
+        // text_cursor_width
+        // text_cursor_preview
+        // clip_rect_margin
+        // button_frame
+        // collapsing_header_frame
+        // indent_has_left_vline
+        // striped
+        // slider_trailing_fill
+
+        // panel_fill: theme.base,
+
+        // window_shadow: epaint::Shadow {
+        //     color: theme.base,
+        //     ..old.window_shadow
+        // },
+        // popup_shadow: epaint::Shadow {
+        //     color: theme.base,
+        //     ..old.popup_shadow
+        // },
+        ..old
+    });
+}
 
 /// This is mostly identical to the gain example, minus some fluff, and with a GUI.
 pub struct Gain {
@@ -49,7 +244,8 @@ impl Default for Gain {
 impl Default for GainParams {
     fn default() -> Self {
         Self {
-            editor_state: EguiState::from_size(300, 180),
+            // set window size
+            editor_state: EguiState::from_size(500, 500),
 
             // See the main gain example for more details
             gain: FloatParam::new(
@@ -104,9 +300,15 @@ impl Plugin for Gain {
         let params = self.params.clone();
         let peak_meter = self.peak_meter.clone();
         create_egui_editor(
+            // State
             self.params.editor_state.clone(),
+            // User state
             (),
-            |_, _| {},
+            // Build
+            |egui_ctx, _state| {
+                set_theme(egui_ctx);
+            },
+            // Update
             move |egui_ctx, setter, _state| {
                 egui::CentralPanel::default().show(egui_ctx, |ui| {
                     // NOTE: See `plugins/diopser/src/editor.rs` for an example using the generic UI widget
@@ -119,6 +321,9 @@ impl Plugin for Gain {
 
                     ui.label("Gain");
                     ui.add(widgets::ParamSlider::for_param(&params.gain, setter));
+
+                    ui.label("Dial");
+                    ui.add(dial2::Dial::for_param(&params.gain, setter));
 
                     ui.label(
                         "Also gain, but with a lame widget. Can't even render the value correctly!",
@@ -151,6 +356,20 @@ impl Plugin for Gain {
                     } else {
                         String::from("-inf dBFS")
                     };
+
+                    let mut boolean = false;
+
+                    ui.add(toggle_switch::toggle(&mut boolean)).on_hover_text(
+                        "It's easy to create your own widgets!\n\
+                        This toggle switch is just 15 lines of code.",
+                    );
+
+                    // ui.add(dial::dial(-30.0, 30.0, &params.gain)).on_hover_text(
+                    //     "It's easy to create your own widgets!\n\
+                    //     This toggle switch is just 15 lines of code.",
+                    // );
+
+                    // ui.add(dial::for_param(&params.gain, setter));
 
                     let peak_meter_normalized = (peak_meter + 60.0) / 60.0;
                     ui.allocate_space(egui::Vec2::splat(2.0));
@@ -233,7 +452,6 @@ impl Vst3Plugin for Gain {
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
 }
-
 
 nih_export_clap!(Gain);
 nih_export_vst3!(Gain);

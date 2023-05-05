@@ -21,6 +21,8 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = [
 ] }
 nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 atomic_float = "0.1"
+parking_lot = "0.12.1"
+lazy_static = "1.4.0"
 
 [profile.release]
 lto = "thin"
