@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::f32::consts::TAU;
+use std::sync::Arc;
 
 use lazy_static::lazy_static;
 use nih_plug::prelude::{Param, ParamSetter};
@@ -180,50 +180,58 @@ impl<'a, P: Param> Dial<'a, P> {
         ui.memory().data.insert_temp(*DRAG_AMOUNT_MEMORY_ID, amount);
     }
 
-    fn slider_ui(&self, ui: &mut Ui, response: &mut Response) {
+    fn slider_ui(&self, ui: &mut Ui) {
         // Handle user input
         // TODO: Optionally (since it can be annoying) add scrolling behind a builder option
-        if response.drag_started() {
-            // When beginning a drag or dragging normally, reset the memory used to keep track of
-            // our granular drag
-            self.begin_drag();
-            Self::set_drag_amount_memory(ui, 0.0);
-        }
-        if let Some(click_pos) = response.interact_pointer_pos() {
-            if ui.input().modifiers.command {
-                // Like double clicking, Ctrl+Click should reset the parameter
-                self.reset_param();
-                response.mark_changed();
-            // // FIXME: This releases the focus again when you release the mouse button without
-            // //        moving the mouse a bit for some reason
-            // } else if ui.input().modifiers.alt && self.draw_value {
-            //     // Allow typing in the value on an Alt+Click. Right now this is shown as part of the
-            //     // value field, so it only makes sense when we're drawing that.
-            //     self.begin_keyboard_entry(ui);
-            } else if ui.input().modifiers.shift {
-                // And shift dragging should switch to a more granulra input method
-                self.granular_drag(ui, response.drag_delta());
-                response.mark_changed();
-            } else {
-                let proportion = nih_plug_egui::egui::emath::remap_clamp(
-                    click_pos.x,
-                    response.rect.x_range(),
-                    0.0..=1.0,
-                ) as f64;
-                self.set_normalized_value(proportion as f32);
-                response.mark_changed();
-                Self::set_drag_amount_memory(ui, 0.0);
-            }
-        }
-        if response.double_clicked() {
-            self.reset_param();
-            response.mark_changed();
-        }
-        if response.drag_released() {
-            self.end_drag();
-        }
+        // if response.drag_started() {
+        //     // When beginning a drag or dragging normally, reset the memory used to keep track of
+        //     // our granular drag
+        //     self.begin_drag();
+        //     Self::set_drag_amount_memory(ui, 0.0);
+        // }
+        // if let Some(click_pos) = response.interact_pointer_pos() {
+        //     if ui.input().modifiers.command {
+        //         // Like double clicking, Ctrl+Click should reset the parameter
+        //         self.reset_param();
+        //         response.mark_changed();
+        //     // // FIXME: This releases the focus again when you release the mouse button without
+        //     // //        moving the mouse a bit for some reason
+        //     // } else if ui.input().modifiers.alt && self.draw_value {
+        //     //     // Allow typing in the value on an Alt+Click. Right now this is shown as part of the
+        //     //     // value field, so it only makes sense when we're drawing that.
+        //     //     self.begin_keyboard_entry(ui);
+        //     } else if ui.input().modifiers.shift {
+        //         // And shift dragging should switch to a more granulra input method
+        //         self.granular_drag(ui, response.drag_delta());
+        //         response.mark_changed();
+        //     } else {
+        //         let proportion = nih_plug_egui::egui::emath::remap_clamp(
+        //             click_pos.x,
+        //             response.rect.x_range(),
+        //             0.0..=1.0,
+        //         ) as f64;
+        //         self.set_normalized_value(proportion as f32);
+        //         response.mark_changed();
+        //         Self::set_drag_amount_memory(ui, 0.0);
+        //     }
+        // }
+        // if response.double_clicked() {
+        //     self.reset_param();
+        //     response.mark_changed();
+        // }
+        // if response.drag_released() {
+        //     self.end_drag();
+        // }
 
-        if !ui.is_rect_visible(response.rect) {
+        // fixed size widget based on the height of a standard button:
+        let desired_size = ui.spacing().interact_size.y * nih_plug_egui::egui::vec2(2.0, 2.0);
+
+        // 2. Allocating space:
+        // This is where we get a region of the screen assigned.
+        // We also tell the Ui to sense clicks in the allocated region.
+        let (rect, mut response) = ui.allocate_exact_size(desired_size, nih_plug_egui::egui::Sense::click());
+
+        if !ui.is_rect_visible(rect) {
             return;
         }
 
@@ -253,7 +261,7 @@ impl<'a, P: Param> Dial<'a, P> {
 
         let visuals = ui.style().interact_selectable(&response, true);
         // All coordinates are in absolute screen coordinates so we use `rect` to place the elements.
-        let rect = response.rect.expand(visuals.expansion);
+        let rect = rect.expand(visuals.expansion);
         let radius = 0.5 * rect.height();
 
         ui.painter()
@@ -276,12 +284,12 @@ impl<'a, P: Param> Dial<'a, P> {
             visuals.fg_stroke,
         );
 
-
         // Get the angle of the value based on the min/max.
-        let value_as_angle = (self.normalized_value() - 0.5) * TAU;
+        let value_as_angle = ((self.normalized_value() * 0.75) - 0.625) * TAU;
 
         // TAU is 2*pi aka 360 degrees.
-        let arrow_vec = nih_plug_egui::egui::Vec2::angled(value_as_angle).normalized() * inner_circle_radius;
+        let arrow_vec =
+            nih_plug_egui::egui::Vec2::angled(value_as_angle).normalized() * inner_circle_radius;
 
         // let arrow_edge = [arr]
         let point2 = inner_circle_center + arrow_vec;
@@ -391,7 +399,7 @@ impl<P: Param> Widget for Dial<'_, P> {
                 })
                 .inner;
 
-            self.slider_ui(ui, &mut response);
+            self.slider_ui(ui);
             if self.draw_value {
                 self.value_ui(ui);
             }
