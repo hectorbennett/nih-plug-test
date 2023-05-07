@@ -352,37 +352,12 @@ impl Plugin for Gain {
                         // display and modify the parameter from the parametr itself
                         // It's not yet fully implemented, as the text is missing.
                         ui.heading("DISTORTOooo");
-                        ui.label("Some random integer");
-                        ui.add(widgets::ParamSlider::for_param(&params.some_int, setter));
 
                         ui.label("Gain");
                         ui.add(widgets::ParamSlider::for_param(&params.gain, setter));
 
                         ui.label("Dial");
                         ui.add(dial::Dial::for_param(&params.gain, setter));
-
-                        ui.label(
-                        "Also gain, but with a lame widget. Can't even render the value correctly!",
-                    );
-                        // This is a simple naieve version of a parameter slider that's not aware of how
-                        // the parameters work
-                        ui.add(
-                            egui::widgets::Slider::from_get_set(-30.0..=30.0, |new_value| {
-                                match new_value {
-                                    Some(new_value_db) => {
-                                        let new_value = util::gain_to_db(new_value_db as f32);
-
-                                        setter.begin_set_parameter(&params.gain);
-                                        setter.set_parameter(&params.gain, new_value);
-                                        setter.end_set_parameter(&params.gain);
-
-                                        new_value_db
-                                    }
-                                    None => util::gain_to_db(params.gain.value()) as f64,
-                                }
-                            })
-                            .suffix(" dB"),
-                        );
 
                         // TODO: Add a proper custom widget instead of reusing a progress bar
                         let peak_meter =

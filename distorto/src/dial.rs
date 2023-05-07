@@ -184,45 +184,6 @@ impl<'a, P: Param> Dial<'a, P> {
     fn slider_ui(&self, ui: &mut Ui) {
         // Handle user input
         // TODO: Optionally (since it can be annoying) add scrolling behind a builder option
-        // if response.drag_started() {
-        //     // When beginning a drag or dragging normally, reset the memory used to keep track of
-        //     // our granular drag
-        //     self.begin_drag();
-        //     Self::set_drag_amount_memory(ui, 0.0);
-        // }
-        // if let Some(click_pos) = response.interact_pointer_pos() {
-        //     if ui.input().modifiers.command {
-        //         // Like double clicking, Ctrl+Click should reset the parameter
-        //         self.reset_param();
-        //         response.mark_changed();
-        //     // // FIXME: This releases the focus again when you release the mouse button without
-        //     // //        moving the mouse a bit for some reason
-        //     // } else if ui.input().modifiers.alt && self.draw_value {
-        //     //     // Allow typing in the value on an Alt+Click. Right now this is shown as part of the
-        //     //     // value field, so it only makes sense when we're drawing that.
-        //     //     self.begin_keyboard_entry(ui);
-        //     } else if ui.input().modifiers.shift {
-        //         // And shift dragging should switch to a more granulra input method
-        //         self.granular_drag(ui, response.drag_delta());
-        //         response.mark_changed();
-        //     } else {
-        //         let proportion = nih_plug_egui::egui::emath::remap_clamp(
-        //             click_pos.x,
-        //             response.rect.x_range(),
-        //             0.0..=1.0,
-        //         ) as f64;
-        //         self.set_normalized_value(proportion as f32);
-        //         response.mark_changed();
-        //         Self::set_drag_amount_memory(ui, 0.0);
-        //     }
-        // }
-        // if response.double_clicked() {
-        //     self.reset_param();
-        //     response.mark_changed();
-        // }
-        // if response.drag_released() {
-        //     self.end_drag();
-        // }
 
         // fixed size widget based on the height of a standard button:
         let desired_size = ui.spacing().interact_size.y * nih_plug_egui::egui::vec2(5.0, 5.0);
@@ -232,6 +193,47 @@ impl<'a, P: Param> Dial<'a, P> {
         // We also tell the Ui to sense clicks in the allocated region.
         let (rect, mut response) =
             ui.allocate_exact_size(desired_size, nih_plug_egui::egui::Sense::click());
+
+        if response.double_clicked() {
+            self.reset_param();
+            response.mark_changed();
+        }
+
+        if response.drag_started() {
+            // When beginning a drag or dragging normally, reset the memory used to keep track of
+            // our granular drag
+            self.begin_drag();
+            Self::set_drag_amount_memory(ui, 0.0);
+        }
+        if let Some(click_pos) = response.interact_pointer_pos() {
+            if ui.input().modifiers.command {
+                // Like double clicking, Ctrl+Click should reset the parameter
+                self.reset_param();
+                response.mark_changed();
+            // // FIXME: This releases the focus again when you release the mouse button without
+            // //        moving the mouse a bit for some reason
+            // } else if ui.input().modifiers.alt && self.draw_value {
+            //     // Allow typing in the value on an Alt+Click. Right now this is shown as part of the
+            //     // value field, so it only makes sense when we're drawing that.
+            //     self.begin_keyboard_entry(ui);
+            } else if ui.input().modifiers.shift {
+                // And shift dragging should switch to a more granulra input method
+                self.granular_drag(ui, response.drag_delta());
+                response.mark_changed();
+            } else {
+                let proportion = nih_plug_egui::egui::emath::remap_clamp(
+                    click_pos.x,
+                    response.rect.x_range(),
+                    0.0..=1.0,
+                ) as f64;
+                self.set_normalized_value(proportion as f32);
+                response.mark_changed();
+                Self::set_drag_amount_memory(ui, 0.0);
+            }
+        }
+        // if response.drag_released() {
+        //     self.end_drag();
+        // }
 
         if !ui.is_rect_visible(rect) {
             return;
