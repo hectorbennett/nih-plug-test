@@ -1,144 +1,470 @@
-use nih_plug_egui::egui;
 use std::f32::consts::TAU;
+use std::sync::Arc;
 
-/// iOS-style dial switch:
+use lazy_static::lazy_static;
+use nih_plug::prelude::{Param, ParamSetter};
+use nih_plug_egui::egui::{
+    vec2, Color32, Key, Mesh, Response, Sense, Shape, Stroke, TextEdit, TextStyle, Ui, Vec2,
+    Widget, WidgetText,
+};
+use parking_lot::Mutex;
+
+// use super::util;
+
+/// When shift+dragging a parameter, one pixel dragged corresponds to this much change in the
+/// noramlized parameter.
+const GRANULAR_DRAG_MULTIPLIER: f32 = 0.0015;
+
+lazy_static! {
+    static ref DRAG_NORMALIZED_START_VALUE_MEMORY_ID: nih_plug_egui::egui::Id =
+        nih_plug_egui::egui::Id::new((file!(), 0));
+    static ref DRAG_AMOUNT_MEMORY_ID: nih_plug_egui::egui::Id =
+        nih_plug_egui::egui::Id::new((file!(), 1));
+    static ref VALUE_ENTRY_MEMORY_ID: nih_plug_egui::egui::Id =
+        nih_plug_egui::egui::Id::new((file!(), 2));
+}
+
+/// A slider widget similar to [`egui::widgets::Slider`] that knows about NIH-plug parameters ranges
+/// and can get values for it. The slider supports double click and control click to reset,
+/// shift+drag for granular dragging, text value entry by clicking on the value text.
 ///
-/// ``` text
-///      _____________
-///     /       /.....\
-///    |       |.......|
-///     \_______\_____/
-/// ```
-///
-/// ## Example:
-/// ``` ignore
-/// dial_ui(ui, &mut my_bool);
-/// ```
-///
+/// TODO: Vertical orientation
+/// TODO: Check below for more input methods that should be added
+/// TODO: Decouple the logic from the drawing so we can also do things like nobs without having to
+///       repeat everything
+/// TODO: Add WidgetInfo annotations for accessibility
+#[must_use = "You should put this widget in an ui with `ui.add(widget);`"]
+pub struct Dial<'a, P: Param> {
+    param: &'a P,
+    setter: &'a ParamSetter<'a>,
 
-pub fn dial_ui(ui: &mut egui::Ui, min: f32, max: f32, value: &mut f32) -> egui::Response {
-    // Widget code can be broken up in four steps:
-    //  1. Decide a size for the widget
-    //  2. Allocate space for it
-    //  3. Handle interactions with the widget (if any)
-    //  4. Paint the widget
+    draw_value: bool,
+    slider_width: Option<f32>,
 
-    // fixed size widget based on the height of a standard button:
-    let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 2.0);
+    /// Will be set in the `ui()` function so we can request keyboard input focus on Alt+click.
+    keyboard_focus_id: Option<nih_plug_egui::egui::Id>,
+}
 
-    // 2. Allocating space:
-    // This is where we get a region of the screen assigned.
-    // We also tell the Ui to sense clicks in the allocated region.
-    let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+impl<'a, P: Param> Dial<'a, P> {
+    /// Create a new slider for a parameter. Use the other methods to modify the slider before
+    /// passing it to [`Ui::add()`].
+    pub fn for_param(param: &'a P, setter: &'a ParamSetter<'a>) -> Self {
+        Self {
+            param,
+            setter,
 
-    // 3. Interact: Time to check for clicks!
-    // if response.clicked() {
-    //     *on = !*on;
-    //     response.mark_changed(); // report back that the value changed
-    // }
+            draw_value: true,
+            slider_width: None,
 
-    // Attach some meta-data to the response which can be used by screen readers:
-    // response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, *on, ""));
+            keyboard_focus_id: None,
+        }
+    }
 
-    // 4. Paint!
-    // Make sure we need to paint:
-    if ui.is_rect_visible(rect) {
-        // Let's ask for a simple animation from egui.
-        // egui keeps track of changes in the boolean associated with the id and
-        // returns an animated value in the 0-1 range for how much "on" we are.
-        // let how_on = ui.ctx().animate_bool(response.id, *on);
-        // We will follow the current style by asking
-        // "how should something that is being interacted with be painted?".
-        // This will, for instance, give us different colors when the widget is hovered or clicked.
+    /// Don't draw the text slider's current value after the slider.
+    pub fn without_value(mut self) -> Self {
+        self.draw_value = false;
+        self
+    }
+
+    /// Set a custom width for the slider.
+    pub fn with_width(mut self, width: f32) -> Self {
+        self.slider_width = Some(width);
+        self
+    }
+
+    fn plain_value(&self) -> P::Plain {
+        self.param.modulated_plain_value()
+    }
+
+    fn normalized_value(&self) -> f32 {
+        self.param.modulated_normalized_value()
+    }
+
+    fn string_value(&self) -> String {
+        self.param.to_string()
+    }
+
+    /// Enable the keyboard entry part of the widget.
+    fn begin_keyboard_entry(&self, ui: &Ui) {
+        ui.memory().request_focus(self.keyboard_focus_id.unwrap());
+
+        // Always initialize the field to the current value, that seems nicer than having to
+        // being typing from scratch
+        let value_entry_mutex = ui
+            .memory()
+            .data
+            .get_temp_mut_or_default::<Arc<Mutex<String>>>(*VALUE_ENTRY_MEMORY_ID)
+            .clone();
+        *value_entry_mutex.lock() = self.string_value();
+    }
+
+    fn keyboard_entry_active(&self, ui: &Ui) -> bool {
+        ui.memory().has_focus(self.keyboard_focus_id.unwrap())
+    }
+
+    fn begin_drag(&self) {
+        self.setter.begin_set_parameter(self.param);
+    }
+
+    fn set_normalized_value(&self, normalized: f32) {
+        // This snaps to the nearest plain value if the parameter is stepped in some way.
+        // TODO: As an optimization, we could add a `const CONTINUOUS: bool` to the parameter to
+        //       avoid this normalized->plain->normalized conversion for parameters that don't need
+        //       it
+        let value = self.param.preview_plain(normalized);
+        if value != self.plain_value() {
+            self.setter.set_parameter(self.param, value);
+        }
+    }
+
+    /// Begin and end drag still need to be called when using this. Returns `false` if the string
+    /// could no tbe parsed.
+    fn set_from_string(&self, string: &str) -> bool {
+        match self.param.string_to_normalized_value(string) {
+            Some(normalized_value) => {
+                self.set_normalized_value(normalized_value);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Begin and end drag still need to be called when using this..
+    fn reset_param(&self) {
+        self.setter
+            .set_parameter(self.param, self.param.default_plain_value());
+    }
+
+    fn granular_drag(&self, ui: &Ui, drag_delta: Vec2) {
+        // Remember the intial position when we started with the granular drag. This value gets
+        // reset whenever we have a normal itneraction with the slider.
+        let start_value = if Self::get_drag_amount_memory(ui) == 0.0 {
+            Self::set_drag_normalized_start_value_memory(ui, self.normalized_value());
+            self.normalized_value()
+        } else {
+            Self::get_drag_normalized_start_value_memory(ui)
+        };
+
+        let total_drag_distance = drag_delta.x + Self::get_drag_amount_memory(ui);
+        Self::set_drag_amount_memory(ui, total_drag_distance);
+
+        self.set_normalized_value(
+            (start_value + (total_drag_distance * GRANULAR_DRAG_MULTIPLIER)).clamp(0.0, 1.0),
+        );
+    }
+
+    fn end_drag(&self) {
+        self.setter.end_set_parameter(self.param);
+    }
+
+    fn get_drag_normalized_start_value_memory(ui: &Ui) -> f32 {
+        ui.memory()
+            .data
+            .get_temp(*DRAG_NORMALIZED_START_VALUE_MEMORY_ID)
+            .unwrap_or(0.5)
+    }
+
+    fn set_drag_normalized_start_value_memory(ui: &Ui, amount: f32) {
+        ui.memory()
+            .data
+            .insert_temp(*DRAG_NORMALIZED_START_VALUE_MEMORY_ID, amount);
+    }
+
+    fn get_drag_amount_memory(ui: &Ui) -> f32 {
+        ui.memory()
+            .data
+            .get_temp(*DRAG_AMOUNT_MEMORY_ID)
+            .unwrap_or(0.0)
+    }
+
+    fn set_drag_amount_memory(ui: &Ui, amount: f32) {
+        ui.memory().data.insert_temp(*DRAG_AMOUNT_MEMORY_ID, amount);
+    }
+
+    fn slider_ui(&self, ui: &mut Ui) {
+        // Handle user input
+        // TODO: Optionally (since it can be annoying) add scrolling behind a builder option
+        // if response.drag_started() {
+        //     // When beginning a drag or dragging normally, reset the memory used to keep track of
+        //     // our granular drag
+        //     self.begin_drag();
+        //     Self::set_drag_amount_memory(ui, 0.0);
+        // }
+        // if let Some(click_pos) = response.interact_pointer_pos() {
+        //     if ui.input().modifiers.command {
+        //         // Like double clicking, Ctrl+Click should reset the parameter
+        //         self.reset_param();
+        //         response.mark_changed();
+        //     // // FIXME: This releases the focus again when you release the mouse button without
+        //     // //        moving the mouse a bit for some reason
+        //     // } else if ui.input().modifiers.alt && self.draw_value {
+        //     //     // Allow typing in the value on an Alt+Click. Right now this is shown as part of the
+        //     //     // value field, so it only makes sense when we're drawing that.
+        //     //     self.begin_keyboard_entry(ui);
+        //     } else if ui.input().modifiers.shift {
+        //         // And shift dragging should switch to a more granulra input method
+        //         self.granular_drag(ui, response.drag_delta());
+        //         response.mark_changed();
+        //     } else {
+        //         let proportion = nih_plug_egui::egui::emath::remap_clamp(
+        //             click_pos.x,
+        //             response.rect.x_range(),
+        //             0.0..=1.0,
+        //         ) as f64;
+        //         self.set_normalized_value(proportion as f32);
+        //         response.mark_changed();
+        //         Self::set_drag_amount_memory(ui, 0.0);
+        //     }
+        // }
+        // if response.double_clicked() {
+        //     self.reset_param();
+        //     response.mark_changed();
+        // }
+        // if response.drag_released() {
+        //     self.end_drag();
+        // }
+
+        // fixed size widget based on the height of a standard button:
+        let desired_size = ui.spacing().interact_size.y * nih_plug_egui::egui::vec2(5.0, 5.0);
+
+        // 2. Allocating space:
+        // This is where we get a region of the screen assigned.
+        // We also tell the Ui to sense clicks in the allocated region.
+        let (rect, mut response) =
+            ui.allocate_exact_size(desired_size, nih_plug_egui::egui::Sense::click());
+
+        if !ui.is_rect_visible(rect) {
+            return;
+        }
+
+        // And finally draw the thing
+
+        // We'll do a flat widget with background -> filled foreground -> slight border
+        // ui.painter()
+        //     .rect_filled(response.rect, 0.0, ui.visuals().widgets.inactive.bg_fill);
+
+        // let filled_proportion = self.normalized_value();
+        // if filled_proportion > 0.0 {
+        //     let mut filled_rect = response.rect;
+        //     filled_rect.set_width(response.rect.width() * filled_proportion);
+        //     // let filled_bg = if response.dragged() {
+        //     //     util::add_hsv(ui.visuals().selection.bg_fill, 0.0, -0.1, 0.1)
+        //     // } else {
+        //     let filled_bg = ui.visuals().selection.bg_fill;
+        //     // };
+        //     ui.painter().rect_filled(filled_rect, 0.0, filled_bg);
+        // }
+
+        // ui.painter().rect_stroke(
+        //     response.rect,
+        //     0.0,
+        //     Stroke::new(1.0, ui.visuals().widgets.active.bg_fill),
+        // );
+
+        // Draw the outer circle
+        // let mut mesh = Mesh::with_texture(texture_id);
+        // mesh.add_rect_with_uv(rect, uv, tint);
+        // ui.painter().add(Shape::mesh(mesh));
+
         let visuals = ui.style().interact_selectable(&response, true);
         // All coordinates are in absolute screen coordinates so we use `rect` to place the elements.
         let rect = rect.expand(visuals.expansion);
-        let radius = 0.5 * rect.height();
+        let outer_circle_radius = 0.5 * rect.height();
 
-        ui.painter()
-            .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
+        // ui.painter()
+        //     .rect(rect, outer_circle_radius, visuals.bg_fill, visuals.bg_stroke);
 
         // Paint the circle, animating it from left to right with `how_on`:
-        let circle_x = rect.left() + radius;
 
         // center of the circle
-        let inner_circle_center = egui::pos2(circle_x, rect.center().y);
+        // let circle_center = nih_plug_egui::egui::pos2(circle_x, rect.center().y);
+        let circle_center = rect.center();
 
         // radius of the inner circle
-        let inner_circle_radius = 0.75 * radius;
+        // let inner_circle_radius = 0.75 * outer_circle_radius;
 
-        // draw the inner circle
-        ui.painter().circle(
-            inner_circle_center,
-            inner_circle_radius,
-            visuals.bg_fill,
-            visuals.fg_stroke,
+        // draw an outer circle in black
+        ui.painter().circle_filled(
+            circle_center,
+            outer_circle_radius,
+            Color32::BLACK,
+            // visuals.fg_stroke,
         );
 
+        // draw an inner circle in white.
+        ui.painter().circle_filled(
+            circle_center,
+            outer_circle_radius * 0.9,
+            Color32::WHITE,
+            // visuals.fg_stroke,
+        );
+
+        // draw a triangle at the bottom to take away a quarter chunk of the circle.
+        // TAU is 2*pi aka 360 degrees.
+        // The triangle height should equal the radius of the outer circle.
+        //   |\
+        // r | \ h
+        //   ---
+        //    r
+        // r^2 + (r)^2 = h^2 -> h = (r^2 + r^2) ^ 1/2 = r * (2 ^ 1/2)
+        let h = outer_circle_radius * 2.0_f32.sqrt();
+        let triangle_vec_1 = nih_plug_egui::egui::Vec2::angled(-0.625 * TAU).normalized() * h;
+        let triangle_vec_2 = nih_plug_egui::egui::Vec2::angled(0.125 * TAU).normalized() * h;
+        let triangle_point_1 = circle_center + triangle_vec_1;
+        let triangle_point_2 = circle_center + triangle_vec_2;
+
+        ui.painter().add(Shape::convex_polygon(
+            vec![circle_center, triangle_point_2, triangle_point_1],
+            Color32::WHITE,
+            Stroke::none(),
+        ));
+
+        // Draw an inner black circle, which is the dial itself.
+        ui.painter().circle_filled(
+            circle_center,
+            outer_circle_radius * 0.8,
+            Color32::BLACK,
+            // visuals.fg_stroke,
+        );
+
+        // ui.painter().convex_polygon(
+        //     vec![circle_center, triangle_point_2, triangle_point_1],
+        //     Color32::WHITE,
+        //     Color32::WHITE,
+        // )
+
+        // draw an inner circle in white
+        // ui.painter().circle(
+        //     inner_circle_center,
+        //     outer_circle_radius,
+        //     visuals.bg_fill,
+        //     visuals.fg_stroke,
+        // );
+
+        // draw an inner circle in white to create a border.
 
         // Get the angle of the value based on the min/max.
-        let range = max - min;
-        let normalised_value = *value - min;
-        let value_as_percentage = normalised_value / range;
-        let value_as_angle = (value_as_percentage - 0.5) * TAU;
+        let value_as_angle = ((self.normalized_value() * 0.75) - 0.625) * TAU;
 
         // TAU is 2*pi aka 360 degrees.
-        let arrow_vec = egui::Vec2::angled(value_as_angle).normalized() * inner_circle_radius;
+        let arrow_vec = nih_plug_egui::egui::Vec2::angled(value_as_angle).normalized()
+            * outer_circle_radius
+            * 0.8;
 
         // let arrow_edge = [arr]
-        let point2 = inner_circle_center + arrow_vec;
+        let point2 = circle_center + arrow_vec;
 
-        // draw an arrow from the center to the edge of the inner circle
-        // ui.painter()
-        //     .arrow(inner_circle_center, arrow_vec, visuals.fg_stroke);
-
-        ui.painter()
-            .line_segment([inner_circle_center, point2], visuals.fg_stroke);
+        // draw a line from the center to the edge of the inner circle
+        ui.painter().line_segment(
+            [circle_center, point2],
+            Stroke::new(outer_circle_radius * 0.1, Color32::WHITE),
+        );
     }
 
-    // All done! Return the interaction response so the user can check what happened
-    // (hovered, clicked, ...) and maybe show a tooltip:
-    response
-}
+    fn value_ui(&self, ui: &mut Ui) {
+        let visuals = ui.visuals().widgets.inactive;
+        let should_draw_frame = ui.visuals().button_frame;
+        let padding = ui.spacing().button_padding;
 
-/// Here is the same code again, but a bit more compact:
-#[allow(dead_code)]
-fn dial_ui_compact(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
-    let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
-    let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
-    if response.clicked() {
-        *on = !*on;
-        response.mark_changed();
+        // Either show the parameter's label, or show a text entry field if the parameter's label
+        // has been clicked on
+        let keyboard_focus_id = self.keyboard_focus_id.unwrap();
+        if self.keyboard_entry_active(ui) {
+            let value_entry_mutex = ui
+                .memory()
+                .data
+                .get_temp_mut_or_default::<Arc<Mutex<String>>>(*VALUE_ENTRY_MEMORY_ID)
+                .clone();
+            let mut value_entry = value_entry_mutex.lock();
+
+            ui.add(
+                TextEdit::singleline(&mut *value_entry)
+                    .id(keyboard_focus_id)
+                    .font(TextStyle::Monospace),
+            );
+            if ui.input().key_pressed(Key::Escape) {
+                // Cancel when pressing escape
+                ui.memory().surrender_focus(keyboard_focus_id);
+            } else if ui.input().key_pressed(Key::Enter) {
+                // And try to set the value by string when pressing enter
+                self.begin_drag();
+                self.set_from_string(&value_entry);
+                self.end_drag();
+
+                ui.memory().surrender_focus(keyboard_focus_id);
+            }
+        } else {
+            let text = WidgetText::from(self.string_value()).into_galley(
+                ui,
+                None,
+                ui.available_width() - (padding.x * 2.0),
+                TextStyle::Button,
+            );
+
+            let response = ui.allocate_response(text.size() + (padding * 2.0), Sense::click());
+            if response.clicked() {
+                self.begin_keyboard_entry(ui);
+            }
+
+            if ui.is_rect_visible(response.rect) {
+                if should_draw_frame {
+                    let fill = visuals.bg_fill;
+                    let stroke = visuals.bg_stroke;
+                    ui.painter().rect(
+                        response.rect.expand(visuals.expansion),
+                        visuals.rounding,
+                        fill,
+                        stroke,
+                    );
+                }
+
+                let text_pos = ui
+                    .layout()
+                    .align_size_within_rect(text.size(), response.rect.shrink2(padding))
+                    .min;
+                text.paint_with_visuals(ui.painter(), text_pos, &visuals);
+            }
+        }
     }
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, *on, ""));
+}
 
-    if ui.is_rect_visible(rect) {
-        let how_on = ui.ctx().animate_bool(response.id, *on);
-        let visuals = ui.style().interact_selectable(&response, *on);
-        let rect = rect.expand(visuals.expansion);
-        let radius = 0.5 * rect.height();
-        ui.painter()
-            .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
-        let circle_x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), how_on);
-        let center = egui::pos2(circle_x, rect.center().y);
-        ui.painter()
-            .circle(center, 0.75 * radius, visuals.bg_fill, visuals.fg_stroke);
+impl<P: Param> Widget for Dial<'_, P> {
+    fn ui(mut self, ui: &mut Ui) -> Response {
+        let slider_width = self
+            .slider_width
+            .unwrap_or_else(|| ui.spacing().slider_width);
+
+        ui.horizontal(|ui| {
+            // Allocate space, but add some padding on the top and bottom to make it look a bit slimmer.
+            let height = ui
+                .text_style_height(&TextStyle::Body)
+                .max(ui.spacing().interact_size.y * 0.8);
+            let slider_height = ui.painter().round_to_pixel(height * 0.8);
+            let mut response = ui
+                .vertical(|ui| {
+                    ui.allocate_space(vec2(slider_width, (height - slider_height) / 2.0));
+                    let response = ui.allocate_response(
+                        vec2(slider_width, slider_height),
+                        Sense::click_and_drag(),
+                    );
+                    let (kb_edit_id, _) =
+                        ui.allocate_space(vec2(slider_width, (height - slider_height) / 2.0));
+                    // Allocate an automatic ID for keeping track of keyboard focus state
+                    // FIXME: There doesn't seem to be a way to generate IDs in the public API, not sure how
+                    //        you're supposed to do this
+                    self.keyboard_focus_id = Some(kb_edit_id);
+
+                    response
+                })
+                .inner;
+
+            self.slider_ui(ui);
+            if self.draw_value {
+                self.value_ui(ui);
+            }
+
+            response
+        })
+        .inner
     }
-
-    response
-}
-
-// A wrapper that allows the more idiomatic usage pattern: `ui.add(dial(&mut my_bool))`
-/// iOS-style dial switch.
-///
-/// ## Example:
-/// ``` ignore
-/// ui.add(dial(&mut my_bool));
-/// ```
-pub fn dial(min: f32, max: f32, value: &mut f32) -> impl egui::Widget + '_ {
-    move |ui: &mut egui::Ui| dial_ui(ui, min, max, value)
-}
-
-pub fn url_to_file_source_code() -> String {
-    format!("https://github.com/emilk/egui/blob/master/{}", file!())
 }

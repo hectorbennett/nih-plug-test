@@ -3,8 +3,7 @@ use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui, widgets, EguiState};
 use std::sync::Arc;
 
-mod dial2;
-mod toggle_switch;
+mod dial;
 
 /// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -122,45 +121,46 @@ const PEAK_METER_DECAY_MS: f64 = 150.0;
 pub fn set_theme(ctx: &egui::Context) {
     let old = ctx.style().visuals.clone();
     ctx.set_visuals(egui::Visuals {
-        override_text_color: old.override_text_color,
-        widgets: egui::style::Widgets {
-            noninteractive: egui::style::WidgetVisuals {
-                bg_stroke: egui::Stroke {
-                    color: egui::Color32::from_rgb(0, 255, 0),
-                    width: 1.0,
-                },
-                ..old.widgets.noninteractive
-            },
-            inactive: egui::style::WidgetVisuals {
-                bg_stroke: egui::Stroke {
-                    color: egui::Color32::from_rgb(0, 255, 0),
-                    width: 1.0,
-                },
-                ..old.widgets.inactive
-            },
-            hovered: egui::style::WidgetVisuals {
-                bg_stroke: egui::Stroke {
-                    color: egui::Color32::from_rgb(0, 255, 0),
-                    width: 1.0,
-                },
-                ..old.widgets.hovered
-            },
-            active: egui::style::WidgetVisuals {
-                bg_stroke: egui::Stroke {
-                    color: egui::Color32::from_rgb(0, 255, 0),
-                    width: 1.0,
-                },
-                ..old.widgets.active
-            },
-            open: egui::style::WidgetVisuals {
-                bg_stroke: egui::Stroke {
-                    color: egui::Color32::from_rgb(0, 255, 0),
-                    width: 1.0,
-                },
-                ..old.widgets.open
-            },
-        },
-        selection: egui::style::Selection { ..old.selection },
+        // panel_fill: egui::Color32::from_rgb(0, 0, 0),
+        // override_text_color: old.override_text_color,
+        // widgets: egui::style::Widgets {
+        //     noninteractive: egui::style::WidgetVisuals {
+        //         bg_stroke: egui::Stroke {
+        //             color: egui::Color32::from_rgb(0, 255, 0),
+        //             width: 1.0,
+        //         },
+        //         ..old.widgets.noninteractive
+        //     },
+        //     inactive: egui::style::WidgetVisuals {
+        //         bg_stroke: egui::Stroke {
+        //             color: egui::Color32::from_rgb(0, 255, 0),
+        //             width: 1.0,
+        //         },
+        //         ..old.widgets.inactive
+        //     },
+        //     hovered: egui::style::WidgetVisuals {
+        //         bg_stroke: egui::Stroke {
+        //             color: egui::Color32::from_rgb(0, 255, 0),
+        //             width: 1.0,
+        //         },
+        //         ..old.widgets.hovered
+        //     },
+        //     active: egui::style::WidgetVisuals {
+        //         bg_stroke: egui::Stroke {
+        //             color: egui::Color32::from_rgb(0, 255, 0),
+        //             width: 1.0,
+        //         },
+        //         ..old.widgets.active
+        //     },
+        //     open: egui::style::WidgetVisuals {
+        //         bg_stroke: egui::Stroke {
+        //             color: egui::Color32::from_rgb(0, 255, 0),
+        //             width: 1.0,
+        //         },
+        //         ..old.widgets.open
+        //     },
+        // },
+        // selection: egui::style::Selection { ..old.selection },
         // hyperlink_color: theme.hyperlink_color,
         // faint_bg_color: theme.faint_bg_color,
         // extreme_bg_color: theme.extreme_bg_color,
@@ -169,7 +169,7 @@ pub fn set_theme(ctx: &egui::Context) {
         // error_fg_color: theme.error_fg_color,
         // window_rounding
         // window_shadow,
-        // window_fill: theme.base,
+        // window_fill: egui::Color32::from_rgb(0, 0, 0),
         // window_stroke: egui::Stroke {
         //     color: theme.overlay1,
         //     ..old.window_stroke
@@ -245,7 +245,7 @@ impl Default for GainParams {
     fn default() -> Self {
         Self {
             // set window size
-            editor_state: EguiState::from_size(500, 500),
+            editor_state: EguiState::from_size(600, 600),
 
             // See the main gain example for more details
             gain: FloatParam::new(
@@ -310,74 +310,96 @@ impl Plugin for Gain {
             },
             // Update
             move |egui_ctx, setter, _state| {
-                egui::CentralPanel::default().show(egui_ctx, |ui| {
-                    // NOTE: See `plugins/diopser/src/editor.rs` for an example using the generic UI widget
+                let my_frame = egui::containers::Frame {
+                    inner_margin: egui::style::Margin {
+                        left: 10.,
+                        right: 10.,
+                        top: 10.,
+                        bottom: 10.,
+                    },
+                    outer_margin: egui::style::Margin {
+                        left: 10.,
+                        right: 10.,
+                        top: 10.,
+                        bottom: 10.,
+                    },
+                    rounding: egui::Rounding {
+                        nw: 1.0,
+                        ne: 1.0,
+                        sw: 1.0,
+                        se: 1.0,
+                    },
+                    shadow: egui::epaint::Shadow {
+                        extrusion: 1.0,
+                        color: egui::Color32::YELLOW,
+                    },
+                    fill: egui::Color32::LIGHT_BLUE,
+                    stroke: egui::Stroke::new(2.0, egui::Color32::GOLD),
+                };
 
-                    // This is a fancy widget that can get all the information it needs to properly
-                    // display and modify the parameter from the parametr itself
-                    // It's not yet fully implemented, as the text is missing.
-                    ui.label("Some random integer");
-                    ui.add(widgets::ParamSlider::for_param(&params.some_int, setter));
+                let my_frame_2 = egui::Frame::none().fill(egui::Color32::WHITE);
+                // egui::CentralPanel::default()
+                //     .frame(my_frame)
+                //     .show(ctx, |ui| {});
+                //  egui::CentralPanel::default().frame(my_frame).show(ctx, |ui| {});
 
-                    ui.label("Gain");
-                    ui.add(widgets::ParamSlider::for_param(&params.gain, setter));
+                egui::CentralPanel::default()
+                    .frame(my_frame_2)
+                    .show(egui_ctx, |ui| {
+                        // NOTE: See `plugins/diopser/src/editor.rs` for an example using the generic UI widget
 
-                    ui.label("Dial");
-                    ui.add(dial2::Dial::for_param(&params.gain, setter));
+                        // This is a fancy widget that can get all the information it needs to properly
+                        // display and modify the parameter from the parametr itself
+                        // It's not yet fully implemented, as the text is missing.
+                        ui.heading("DISTORTOooo");
+                        ui.label("Some random integer");
+                        ui.add(widgets::ParamSlider::for_param(&params.some_int, setter));
 
-                    ui.label(
+                        ui.label("Gain");
+                        ui.add(widgets::ParamSlider::for_param(&params.gain, setter));
+
+                        ui.label("Dial");
+                        ui.add(dial::Dial::for_param(&params.gain, setter));
+
+                        ui.label(
                         "Also gain, but with a lame widget. Can't even render the value correctly!",
                     );
-                    // This is a simple naieve version of a parameter slider that's not aware of how
-                    // the parameters work
-                    ui.add(
-                        egui::widgets::Slider::from_get_set(-30.0..=30.0, |new_value| {
-                            match new_value {
-                                Some(new_value_db) => {
-                                    let new_value = util::gain_to_db(new_value_db as f32);
+                        // This is a simple naieve version of a parameter slider that's not aware of how
+                        // the parameters work
+                        ui.add(
+                            egui::widgets::Slider::from_get_set(-30.0..=30.0, |new_value| {
+                                match new_value {
+                                    Some(new_value_db) => {
+                                        let new_value = util::gain_to_db(new_value_db as f32);
 
-                                    setter.begin_set_parameter(&params.gain);
-                                    setter.set_parameter(&params.gain, new_value);
-                                    setter.end_set_parameter(&params.gain);
+                                        setter.begin_set_parameter(&params.gain);
+                                        setter.set_parameter(&params.gain, new_value);
+                                        setter.end_set_parameter(&params.gain);
 
-                                    new_value_db
+                                        new_value_db
+                                    }
+                                    None => util::gain_to_db(params.gain.value()) as f64,
                                 }
-                                None => util::gain_to_db(params.gain.value()) as f64,
-                            }
-                        })
-                        .suffix(" dB"),
-                    );
+                            })
+                            .suffix(" dB"),
+                        );
 
-                    // TODO: Add a proper custom widget instead of reusing a progress bar
-                    let peak_meter =
-                        util::gain_to_db(peak_meter.load(std::sync::atomic::Ordering::Relaxed));
-                    let peak_meter_text = if peak_meter > util::MINUS_INFINITY_DB {
-                        format!("{peak_meter:.1} dBFS")
-                    } else {
-                        String::from("-inf dBFS")
-                    };
+                        // TODO: Add a proper custom widget instead of reusing a progress bar
+                        let peak_meter =
+                            util::gain_to_db(peak_meter.load(std::sync::atomic::Ordering::Relaxed));
+                        let peak_meter_text = if peak_meter > util::MINUS_INFINITY_DB {
+                            format!("{peak_meter:.1} dBFS")
+                        } else {
+                            String::from("-inf dBFS")
+                        };
 
-                    let mut boolean = false;
-
-                    ui.add(toggle_switch::toggle(&mut boolean)).on_hover_text(
-                        "It's easy to create your own widgets!\n\
-                        This toggle switch is just 15 lines of code.",
-                    );
-
-                    // ui.add(dial::dial(-30.0, 30.0, &params.gain)).on_hover_text(
-                    //     "It's easy to create your own widgets!\n\
-                    //     This toggle switch is just 15 lines of code.",
-                    // );
-
-                    // ui.add(dial::for_param(&params.gain, setter));
-
-                    let peak_meter_normalized = (peak_meter + 60.0) / 60.0;
-                    ui.allocate_space(egui::Vec2::splat(2.0));
-                    ui.add(
-                        egui::widgets::ProgressBar::new(peak_meter_normalized)
-                            .text(peak_meter_text),
-                    );
-                });
+                        let peak_meter_normalized = (peak_meter + 60.0) / 60.0;
+                        ui.allocate_space(egui::Vec2::splat(2.0));
+                        ui.add(
+                            egui::widgets::ProgressBar::new(peak_meter_normalized)
+                                .text(peak_meter_text),
+                        );
+                    });
             },
         )
     }
