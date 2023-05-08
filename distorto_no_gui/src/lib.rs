@@ -1,19 +1,3 @@
-// Loudness War Winner: Because negative LUFS are boring
-// Copyright (C) 2022-2023 Robbert van der Helm
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
@@ -28,43 +12,30 @@ const SILENCE_FADEOUT_END_MS: f32 = SILENCE_FADEOUT_START_MS + 1000.0;
 /// The center frequency for our optional bandpass filter, in Hertz.
 const BP_FREQUENCY: f32 = 5500.0;
 
-struct LoudnessWarWinner {
-    params: Arc<LoudnessWarWinnerParams>,
+struct Distorto {
+    params: Arc<DistortoParams>,
 
     sample_rate: f32,
-    /// To win even harder we'll band-pass the signal around 5.5 kHz when the `WIN HARDER` parameter
-    /// is enabled. And we'll cascade four of these filters while we're at it.
     bp_filters: Vec<[filter::Biquad<f32>; 4]>,
-
-    /// The number of samples since the last non-zero sample. This is used to fade into silence when
-    /// the input has also been silent for a while instead of outputting a constant DC signal. All
-    /// channels need to be silent for a signal to be considered silent.
     num_silent_samples: u32,
-    /// `SILENCE_FADEOUT_START_MS` converted to samples.
     silence_fadeout_start_samples: u32,
-    /// `SILENCE_FADEOUT_END_MS` converted to samples.
     silence_fadeout_end_samples: u32,
-    /// The length of the fadeout, in samples.
     silence_fadeout_length_samples: u32,
 }
 
 #[derive(Params)]
-struct LoudnessWarWinnerParams {
-    /// The output gain, set to -24 dB by default because oof ouchie.
+struct DistortoParams {
     #[id = "output"]
     output_gain: FloatParam,
 
-    /// When non-zero, this engages a bandpass filter around 5.5 kHz to help with the LUFS
-    /// K-Weighting. This is a fraction in `[0, 1]`. [`LoudnessWarWinner::update_bp_filters()`]
-    /// calculates the filter's Q value basedo n this.
-    #[id = "powah"]
-    win_harder_factor: FloatParam,
+    #[id = "distortion"]
+    distortion: FloatParam,
 }
 
-impl Default for LoudnessWarWinner {
+impl Default for Distorto {
     fn default() -> Self {
         Self {
-            params: Arc::new(LoudnessWarWinnerParams::default()),
+            params: Arc::new(DistortoParams::default()),
 
             sample_rate: 1.0,
             bp_filters: Vec::new(),
@@ -77,7 +48,7 @@ impl Default for LoudnessWarWinner {
     }
 }
 
-impl Default for LoudnessWarWinnerParams {
+impl Default for DistortoParams {
     fn default() -> Self {
         Self {
             output_gain: FloatParam::new(
@@ -93,8 +64,8 @@ impl Default for LoudnessWarWinnerParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            win_harder_factor: FloatParam::new(
-                "WIN HARDER",
+            distortion: FloatParam::new(
+                "Distortion",
                 0.0,
                 // This ramps up hard, so we'll make sure the 'usable' (for a lack of a better word)
                 // value range is larger
@@ -112,11 +83,11 @@ impl Default for LoudnessWarWinnerParams {
     }
 }
 
-impl Plugin for LoudnessWarWinner {
-    const NAME: &'static str = "Loudness War Winner";
-    const VENDOR: &'static str = "Robbert van der Helm";
+impl Plugin for Distorto {
+    const NAME: &'static str = "Distorto";
+    const VENDOR: &'static str = "Hector";
     const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
-    const EMAIL: &'static str = "mail@robbertvanderhelm.nl";
+    const EMAIL: &'static str = "contact@hectorbennett.com";
 
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -188,10 +159,10 @@ impl Plugin for LoudnessWarWinner {
             let output_gain = self.params.output_gain.smoothed.next();
 
             // When the `WIN_HARDER` parameter is engaged, we'll band-pass the signal around 5 kHz
-            if self.params.win_harder_factor.smoothed.is_smoothing() {
+            if self.params.distortion.smoothed.is_smoothing() {
                 self.update_bp_filters();
             }
-            let apply_bp_filters = self.params.win_harder_factor.smoothed.previous_value() > 0.0;
+            let apply_bp_filters = self.params.distortion.smoothed.previous_value() > 0.0;
 
             let mut is_silent = true;
             for (sample, bp_filters) in channel_samples.iter_mut().zip(&mut self.bp_filters) {
@@ -235,11 +206,9 @@ impl Plugin for LoudnessWarWinner {
     }
 }
 
-impl LoudnessWarWinner {
-    /// Update the band-pass filters. This should only be called during processing if
-    /// `self.params.win_harder_factor.smoothed.is_smoothing()`.
+impl Distorto {
     fn update_bp_filters(&mut self) {
-        let q = 0.00001 + (self.params.win_harder_factor.smoothed.next() * 30.0);
+        let q = 0.00001 + (self.params.distortion.smoothed.next() * 30.0);
 
         let biquad_coefficients =
             filter::BiquadCoefficients::bandpass(self.sample_rate, BP_FREQUENCY, q);
@@ -251,9 +220,9 @@ impl LoudnessWarWinner {
     }
 }
 
-impl ClapPlugin for LoudnessWarWinner {
-    const CLAP_ID: &'static str = "nl.robbertvanderhelm.loudness-war-winner";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("Win the loudness war with ease");
+impl ClapPlugin for Distorto {
+    const CLAP_ID: &'static str = "hectorbennett.distorto";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Distortoooo");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[
@@ -262,20 +231,14 @@ impl ClapPlugin for LoudnessWarWinner {
         ClapFeature::Mono,
         ClapFeature::Limiter,
         ClapFeature::Distortion,
-        ClapFeature::Utility,
-        ClapFeature::Custom("nih:pain"),
     ];
 }
 
-impl Vst3Plugin for LoudnessWarWinner {
-    const VST3_CLASS_ID: [u8; 16] = *b"LoudnessWar.RvdH";
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[
-        Vst3SubCategory::Fx,
-        Vst3SubCategory::Dynamics,
-        Vst3SubCategory::Distortion,
-        Vst3SubCategory::Custom("Pain"),
-    ];
+impl Vst3Plugin for Distorto {
+    const VST3_CLASS_ID: [u8; 16] = *b"Distortooooooooo";
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Fx, Vst3SubCategory::Distortion];
 }
 
-nih_export_clap!(LoudnessWarWinner);
-nih_export_vst3!(LoudnessWarWinner);
+nih_export_clap!(Distorto);
+nih_export_vst3!(Distorto);
