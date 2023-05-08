@@ -1,6 +1,7 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
+mod drive;
 mod waves;
 
 struct TestTone {
@@ -40,6 +41,9 @@ struct TestToneParams {
 
     #[id = "pulse_width"]
     pub pulse_width: FloatParam,
+
+    #[id = "drive"]
+    pub drive: FloatParam,
 }
 
 impl Default for TestTone {
@@ -94,6 +98,16 @@ impl Default for TestToneParams {
                 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            drive: FloatParam::new(
+                "Drive",
+                0.5,
+                FloatRange::Linear {
+                    min: 0.1,
+                    max: 10.0,
+                },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
         }
     }
 }
@@ -108,14 +122,18 @@ impl TestTone {
             self.phase -= 1.0;
         }
 
-        match self.params.wave.value() {
+        // get tone
+        let v = match self.params.wave.value() {
             Wave::Sine => waves::sine(self.phase),
             Wave::Sawtooth => waves::sawtooth(self.phase),
             Wave::Triangle => waves::triangle(self.phase),
             Wave::Square => waves::square(self.phase),
             Wave::Pulse => waves::pulse(self.phase, self.params.pulse_width.value()),
             Wave::Sinc => waves::sinc(self.phase),
-        }
+        };
+
+        // apply distortion
+        drive::drive(v, self.params.drive.value())
     }
 }
 
