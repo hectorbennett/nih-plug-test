@@ -10,7 +10,7 @@ const SILENCE_FADEOUT_START_MS: f32 = 1000.0;
 const SILENCE_FADEOUT_END_MS: f32 = SILENCE_FADEOUT_START_MS + 1000.0;
 
 /// The center frequency for our optional bandpass filter, in Hertz.
-const BP_FREQUENCY: f32 = 5500.0;
+// const BP_FREQUENCY: f32 = 5500.0;
 
 struct Distorto {
     params: Arc<DistortoParams>,
@@ -125,7 +125,6 @@ impl Plugin for Distorto {
             .get() as usize;
         self.bp_filters
             .resize(num_output_channels, [filter::Biquad::default(); 4]);
-        self.update_bp_filters();
 
         self.silence_fadeout_start_samples =
             (SILENCE_FADEOUT_START_MS / 1000.0 * buffer_config.sample_rate).round() as u32;
@@ -158,10 +157,6 @@ impl Plugin for Distorto {
         for mut channel_samples in buffer.iter_samples() {
             let output_gain = self.params.output_gain.smoothed.next();
 
-            // When the `WIN_HARDER` parameter is engaged, we'll band-pass the signal around 5 kHz
-            if self.params.distortion.smoothed.is_smoothing() {
-                self.update_bp_filters();
-            }
             let apply_bp_filters = self.params.distortion.smoothed.previous_value() > 0.0;
 
             let mut is_silent = true;
@@ -203,20 +198,6 @@ impl Plugin for Distorto {
         }
 
         ProcessStatus::Normal
-    }
-}
-
-impl Distorto {
-    fn update_bp_filters(&mut self) {
-        let q = 0.00001 + (self.params.distortion.smoothed.next() * 30.0);
-
-        let biquad_coefficients =
-            filter::BiquadCoefficients::bandpass(self.sample_rate, BP_FREQUENCY, q);
-        for filters in &mut self.bp_filters {
-            for filter in filters {
-                filter.coefficients = biquad_coefficients;
-            }
-        }
     }
 }
 
