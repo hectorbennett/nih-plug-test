@@ -1,12 +1,13 @@
 use nih_plug::prelude::*;
-use std::f32::consts;
 use std::sync::Arc;
+
+mod waves;
 
 struct TestTone {
     params: Arc<TestToneParams>,
     sample_rate: f32,
 
-    /// The current phase of the sine wave, always kept between in `[0, 1]`.
+    // The current phase of the wave, always kept between in `[0, 1]`.
     phase: f32,
 }
 
@@ -20,8 +21,6 @@ pub enum Wave {
     Triangle,
     #[id = "square"]
     Square,
-    #[id = "pulse"]
-    Pulse,
 }
 
 #[derive(Params)]
@@ -84,27 +83,21 @@ impl Default for TestToneParams {
 
 impl TestTone {
     fn calculate_wave(&mut self, frequency: f32) -> f32 {
-        match self.params.wave.value() {
-            Wave::Sine => self.sine(frequency),
-            Wave::Sawtooth => self.sine(frequency),
-            Wave::Triangle => self.sine(frequency),
-            Wave::Square => self.sine(frequency),
-            Wave::Pulse => self.sine(frequency),
-        }
-    }
-
-    fn sine(&mut self, frequency: f32) -> f32 {
         let phase_delta = frequency / self.sample_rate;
-        let sine = (self.phase * consts::TAU).sin();
 
+        // keep phase between [0, 1]
         self.phase += phase_delta;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
         }
 
-        sine
+        match self.params.wave.value() {
+            Wave::Sine => waves::sine(self.phase),
+            Wave::Sawtooth => waves::sawtooth(self.phase),
+            Wave::Triangle => waves::triangle(self.phase),
+            Wave::Square => waves::square(self.phase),
+        }
     }
-
 }
 
 impl Plugin for TestTone {
