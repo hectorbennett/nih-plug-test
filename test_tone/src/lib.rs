@@ -23,6 +23,8 @@ pub enum Wave {
     Square,
     #[id = "pulse"]
     Pulse,
+    #[id = "sinc"]
+    Sinc,
 }
 
 #[derive(Params)]
@@ -112,6 +114,7 @@ impl TestTone {
             Wave::Triangle => waves::triangle(self.phase),
             Wave::Square => waves::square(self.phase),
             Wave::Pulse => waves::pulse(self.phase, self.params.pulse_width.value()),
+            Wave::Sinc => waves::sinc(self.phase),
         }
     }
 }
