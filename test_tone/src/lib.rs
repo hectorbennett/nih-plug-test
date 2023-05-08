@@ -83,7 +83,17 @@ impl Default for TestToneParams {
 }
 
 impl TestTone {
-    fn calculate_sine(&mut self, frequency: f32) -> f32 {
+    fn calculate_wave(&mut self, frequency: f32) -> f32 {
+        match self.params.wave.value() {
+            Wave::Sine => self.sine(frequency),
+            Wave::Sawtooth => self.sine(frequency),
+            Wave::Triangle => self.sine(frequency),
+            Wave::Square => self.sine(frequency),
+            Wave::Pulse => self.sine(frequency),
+        }
+    }
+
+    fn sine(&mut self, frequency: f32) -> f32 {
         let phase_delta = frequency / self.sample_rate;
         let sine = (self.phase * consts::TAU).sin();
 
@@ -94,6 +104,7 @@ impl TestTone {
 
         sine
     }
+
 }
 
 impl Plugin for TestTone {
@@ -154,7 +165,7 @@ impl Plugin for TestTone {
 
             let sine = {
                 let frequency = self.params.frequency.smoothed.next();
-                self.calculate_sine(frequency)
+                self.calculate_wave(frequency)
             };
 
             for sample in channel_samples {
