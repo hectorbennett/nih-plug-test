@@ -2,29 +2,16 @@ use nih_plug::prelude::*;
 use std::f32::consts;
 use std::sync::Arc;
 
-/// A test tone generator that can either generate a sine wave based on the plugin's parameters or
-/// based on the current MIDI input.
-struct Sine {
-    params: Arc<SineParams>,
+struct TestTone {
+    params: Arc<TestToneParams>,
     sample_rate: f32,
 
     /// The current phase of the sine wave, always kept between in `[0, 1]`.
     phase: f32,
-
-    /// The MIDI note ID of the active note, if triggered by MIDI.
-    midi_note_id: u8,
-    /// The frequency if the active note, if triggered by MIDI.
-    midi_note_freq: f32,
-    /// A simple attack and release envelope to avoid clicks. Controlled through velocity and
-    /// aftertouch.
-    ///
-    /// Smoothing is built into the parameters, but you can also use them manually if you need to
-    /// smooth soemthing that isn't a parameter.
-    midi_note_gain: Smoother<f32>,
 }
 
 #[derive(Params)]
-struct SineParams {
+struct TestToneParams {
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -32,22 +19,18 @@ struct SineParams {
     pub frequency: FloatParam,
 }
 
-impl Default for Sine {
+impl Default for TestTone {
     fn default() -> Self {
         Self {
-            params: Arc::new(SineParams::default()),
+            params: Arc::new(TestToneParams::default()),
             sample_rate: 1.0,
 
             phase: 0.0,
-
-            midi_note_id: 0,
-            midi_note_freq: 1.0,
-            midi_note_gain: Smoother::new(SmoothingStyle::Linear(5.0)),
         }
     }
 }
 
-impl Default for SineParams {
+impl Default for TestToneParams {
     fn default() -> Self {
         Self {
             gain: FloatParam::new(
@@ -79,7 +62,7 @@ impl Default for SineParams {
     }
 }
 
-impl Sine {
+impl TestTone {
     fn calculate_sine(&mut self, frequency: f32) -> f32 {
         let phase_delta = frequency / self.sample_rate;
         let sine = (self.phase * consts::TAU).sin();
@@ -93,8 +76,8 @@ impl Sine {
     }
 }
 
-impl Plugin for Sine {
-    const NAME: &'static str = "Sine Test Tone";
+impl Plugin for TestTone {
+    const NAME: &'static str = "TestTone Test Tone";
     const VENDOR: &'static str = "Moist Plugins GmbH";
     const URL: &'static str = "https://youtu.be/dQw4w9WgXcQ";
     const EMAIL: &'static str = "info@example.com";
@@ -115,7 +98,6 @@ impl Plugin for Sine {
         },
     ];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
@@ -138,9 +120,6 @@ impl Plugin for Sine {
 
     fn reset(&mut self) {
         self.phase = 0.0;
-        self.midi_note_id = 0;
-        self.midi_note_freq = 1.0;
-        self.midi_note_gain.reset(0.0);
     }
 
     fn process(
@@ -153,7 +132,6 @@ impl Plugin for Sine {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
 
-            // This plugin can be either triggered by MIDI or controleld by a parameter
             let sine = {
                 let frequency = self.params.frequency.smoothed.next();
                 self.calculate_sine(frequency)
@@ -168,10 +146,9 @@ impl Plugin for Sine {
     }
 }
 
-impl ClapPlugin for Sine {
+impl ClapPlugin for TestTone {
     const CLAP_ID: &'static str = "com.moist-plugins-gmbh.sine";
-    const CLAP_DESCRIPTION: Option<&'static str> =
-        Some("An optionally MIDI controlled sine test tone");
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Test tone");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[
@@ -183,8 +160,8 @@ impl ClapPlugin for Sine {
     ];
 }
 
-impl Vst3Plugin for Sine {
-    const VST3_CLASS_ID: [u8; 16] = *b"SineMoistestPlug";
+impl Vst3Plugin for TestTone {
+    const VST3_CLASS_ID: [u8; 16] = *b"TestTonePlugin.a";
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[
         Vst3SubCategory::Instrument,
         Vst3SubCategory::Synth,
@@ -192,5 +169,5 @@ impl Vst3Plugin for Sine {
     ];
 }
 
-nih_export_clap!(Sine);
-nih_export_vst3!(Sine);
+nih_export_clap!(TestTone);
+nih_export_vst3!(TestTone);
