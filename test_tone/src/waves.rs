@@ -48,11 +48,7 @@ fn test_triangle() {
 }
 
 pub fn square(phase: f32) -> f32 {
-    if phase < 0.5 {
-        return -1.0;
-    } else {
-        return 1.0;
-    }
+    pulse(phase, 0.5)
 }
 
 #[test]
@@ -64,4 +60,23 @@ fn test_square() {
     assert_eq!(square(0.5), 1.0);
     assert_eq!(square(0.75), 1.0);
     assert_eq!(square(1.0), 1.0);
+}
+
+pub fn pulse(phase: f32, pulse_width: f32) -> f32 {
+    if phase < pulse_width {
+        return -1.0;
+    } else {
+        return 1.0;
+    }
+}
+
+#[test]
+fn test_pulse() {
+    assert_eq!(pulse(0.0, 0.4), -1.0);
+    assert_eq!(pulse(0.25, 0.4), -1.0);
+    assert_eq!(pulse(0.399, 0.4), -1.0);
+
+    assert_eq!(pulse(0.4, 0.4), 1.0);
+    assert_eq!(pulse(0.75, 0.4), 1.0);
+    assert_eq!(pulse(1.0, 0.4), 1.0);
 }

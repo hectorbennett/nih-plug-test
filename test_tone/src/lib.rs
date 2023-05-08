@@ -21,6 +21,8 @@ pub enum Wave {
     Triangle,
     #[id = "square"]
     Square,
+    #[id = "pulse"]
+    Pulse,
 }
 
 #[derive(Params)]
@@ -33,6 +35,9 @@ struct TestToneParams {
 
     #[id = "wave_style"]
     pub wave: EnumParam<Wave>,
+
+    #[id = "pulse_width"]
+    pub pulse_width: FloatParam,
 }
 
 impl Default for TestTone {
@@ -77,6 +82,16 @@ impl Default for TestToneParams {
             .with_string_to_value(formatters::s2v_f32_hz_then_khz()),
 
             wave: EnumParam::new("Wave", Wave::Sine),
+
+            pulse_width: FloatParam::new(
+                "PulseWidth",
+                0.5,
+                FloatRange::Linear {
+                    min: 0.0001,
+                    max: 0.9999,
+                },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
         }
     }
 }
@@ -96,6 +111,7 @@ impl TestTone {
             Wave::Sawtooth => waves::sawtooth(self.phase),
             Wave::Triangle => waves::triangle(self.phase),
             Wave::Square => waves::square(self.phase),
+            Wave::Pulse => waves::pulse(self.phase, self.params.pulse_width.value()),
         }
     }
 }
