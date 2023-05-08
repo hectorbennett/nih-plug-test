@@ -10,6 +10,20 @@ struct TestTone {
     phase: f32,
 }
 
+#[derive(Enum, Debug, PartialEq)]
+pub enum Wave {
+    #[id = "sine"]
+    Sine,
+    #[id = "sawtooth"]
+    Sawtooth,
+    #[id = "triangle"]
+    Triangle,
+    #[id = "square"]
+    Square,
+    #[id = "pulse"]
+    Pulse,
+}
+
 #[derive(Params)]
 struct TestToneParams {
     #[id = "gain"]
@@ -17,6 +31,9 @@ struct TestToneParams {
 
     #[id = "freq"]
     pub frequency: FloatParam,
+
+    #[id = "wave_style"]
+    pub wave: EnumParam<Wave>,
 }
 
 impl Default for TestTone {
@@ -44,6 +61,7 @@ impl Default for TestToneParams {
             .with_smoother(SmoothingStyle::Linear(3.0))
             .with_step_size(0.01)
             .with_unit(" dB"),
+
             frequency: FloatParam::new(
                 "Frequency",
                 420.0,
@@ -58,6 +76,8 @@ impl Default for TestToneParams {
             // displayed as if it were rounded. This formatter also includes the unit.
             .with_value_to_string(formatters::v2s_f32_hz_then_khz(0))
             .with_string_to_value(formatters::s2v_f32_hz_then_khz()),
+
+            wave: EnumParam::new("Wave", Wave::Sine),
         }
     }
 }
